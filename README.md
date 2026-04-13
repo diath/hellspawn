@@ -6,6 +6,9 @@ Currently only .dat version `10.98` is supported.
 Made with the assistance of `Claude Opus 4.6`.
 
 # Screenshots
+<img width="1340" height="828" alt="image" src="https://github.com/user-attachments/assets/101d19a2-3fbb-4333-9d64-788dfabefa5f" />
+<img width="1340" height="828" alt="image" src="https://github.com/user-attachments/assets/76ebdd26-48ab-465e-9e2b-e48dac776beb" />
+<img width="1340" height="828" alt="image" src="https://github.com/user-attachments/assets/47e31d6a-f7a2-4da2-a958-c4f3eddda5ae" />
 
 # Build Instructions (Windows)
 * Requirements: Git, CMake, MSBuild/VS (with C++20 support), vcpkg.
