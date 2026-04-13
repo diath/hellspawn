@@ -1,0 +1,13 @@
+build/
+data/
+.vscode/
+.cache/
+
+hellspawn
+
+*.spr
+*.dat
+*.otb
+*.exe
+*.dll
+*.ico

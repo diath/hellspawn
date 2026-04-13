@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/">
+        <file>hellspawn.png</file>
+    </qresource>
+</RCC>

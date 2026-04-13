@@ -1,0 +1,31 @@
+---
+BasedOnStyle: WebKit
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterEnum: true
+  AfterStruct: true
+  AfterClass: true
+  AfterCaseLabel: false
+  AfterFunction: true
+  AfterNamespace: false
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: false
+  BeforeLambdaBody: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+PointerAlignment: Right
+AlignAfterOpenBracket: BlockIndent
+SpaceBeforeInheritanceColon: false
+SpaceBeforeRangeBasedForLoopColon: false
+IndentAccessModifiers: true
+IndentCaseLabels: true
+ConstructorInitializerIndentWidth: 0
+BitFieldColonSpacing: After
+SpaceBeforeCtorInitializerColon: false
+Cpp11BracedListStyle: true
+TabWidth: 4
+UseTab: ForIndentation
+
+...
+

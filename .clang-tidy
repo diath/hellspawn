@@ -1,0 +1,19 @@
+---
+Checks:          '-*,bugprone-*,-bugprone-branch-clone,-bugprone-assignment-in-if-condition,-bugprone-narrowing-conversions,-bugprone-easily-swappable-parameters,-bugprone-implicit-widening-of-multiplication-result,modernize-*,-modernize-use-trailing-return-type,-modernize-use-auto,-modernize-avoid-bind,-modernize-avoid-c-arrays,performance-*'
+WarningsAsErrors: ''
+HeaderFileExtensions:
+  - ''
+  - h
+  - hh
+  - hpp
+  - hxx
+ImplementationFileExtensions:
+  - c
+  - cc
+  - cpp
+  - cxx
+HeaderFilterRegex: ''
+FormatStyle:     none
+UseColor:        true
+SystemHeaders:   false
+...

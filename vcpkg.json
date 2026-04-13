@@ -1,0 +1,12 @@
+{
+  "name": "hellspawn",
+  "version-string": "1.0.0",
+  "description": "Data editor for forgottenserver and otclient.",
+  "builtin-baseline": "389e18e8380daab3884e7dc0710ad7f4a264def6",
+  "dependencies": ["qtbase", "fmt", "pugixml"],
+  "overrides": [
+    { "name": "qtbase", "version": "6.10.2#0" },
+    { "name": "fmt", "version": "12.1.0#0" },
+    { "name": "pugixml", "version": "1.15#1" }
+  ]
+}
