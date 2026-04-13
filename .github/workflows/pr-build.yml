@@ -1,0 +1,251 @@
+# =============================================================================
+# PR Build Validation
+# =============================================================================
+# Validates that the project compiles cleanly on both Linux and Windows before
+# a pull request can be merged.  Triggers only when build-relevant files are
+# touched.  Heavy vcpkg dependencies (Qt6, fmt, pugixml) are cached across
+# runs so that only the first build pays the full compilation cost.
+#
+# The custom build scripts (build.sh / build.bat) are interactive — they
+# prompt for build type and vcpkg usage.  We feed the answers through stdin
+# via a temporary file redirect so the scripts run unmodified.
+# =============================================================================
+
+name: PR Build Validation
+
+on:
+  pull_request:
+    paths:
+      - "CMakeLists.txt"
+      - "src/**"
+      - "resources.qrc"
+      - "hellspawn.png"
+      - "hellspawn.rc"
+
+# Cancel superseded runs for the same PR to save runner minutes.
+concurrency:
+  group: pr-build-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# CI build metadata — picked up by CMake (via environment variables) and
+# baked into the generated gitinfo.h so the About dialog can show/link to
+# the exact build and commit.
+# ---------------------------------------------------------------------------
+env:
+  CI_BUILD_ID: ${{ github.run_id }}
+  COMMIT_HASH: ${{ github.sha }}
+
+jobs:
+  # ===========================================================================
+  # Linux — Clang via build.sh
+  # ===========================================================================
+  build-linux:
+    name: Linux Build (Clang)
+    runs-on: ubuntu-latest
+
+    env:
+      # Redirect vcpkg's binary cache to a well-known path we can persist.
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
+      # Force Clang for the build script and for vcpkg port compilation.
+      CC: clang
+      CXX: clang++
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Prepare vcpkg binary cache directory
+      # -----------------------------------------------------------------------
+      - name: Create vcpkg binary cache directory
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      # -----------------------------------------------------------------------
+      # 3. Restore vcpkg binary cache
+      # -----------------------------------------------------------------------
+      # Keyed on vcpkg.json so that dependency changes bust the cache.
+      # The restore-key prefix gives us a partial hit when only the hash
+      # changes — existing binaries are still valid, and vcpkg only compiles
+      # the delta.
+      # -----------------------------------------------------------------------
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vcpkg-binary-cache
+          key: vcpkg-linux-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-linux-
+
+      # -----------------------------------------------------------------------
+      # 4. Restore CMake build directory (incremental builds)
+      # -----------------------------------------------------------------------
+      - name: Restore CMake build cache
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: cmake-linux-${{ hashFiles('CMakeLists.txt', 'src/**') }}
+          restore-keys: |
+            cmake-linux-
+
+      # -----------------------------------------------------------------------
+      # 5. Install Linux system dependencies required to build Qt6 from source
+      # -----------------------------------------------------------------------
+      - name: Install Clang and system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            clang build-essential pkg-config python3 perl \
+            libgl1-mesa-dev libglu1-mesa-dev libegl1-mesa-dev \
+            libx11-dev libx11-xcb-dev libxcb1-dev \
+            libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
+            libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render0-dev \
+            libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
+            libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev \
+            libxcb-xinerama0-dev libxcb-xkb-dev libxcb-cursor-dev \
+            libxext-dev libxfixes-dev libxi-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxrender-dev \
+            libatspi2.0-dev libdbus-1-dev \
+            libfontconfig1-dev libfreetype6-dev autoconf autoconf-archive libltdl-dev
+
+      # -----------------------------------------------------------------------
+      # 6. Export VCPKG_ROOT so the build script can locate vcpkg
+      # -----------------------------------------------------------------------
+      - name: Set VCPKG_ROOT
+        run: echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # 6b. Verify Clang is available
+      # -----------------------------------------------------------------------
+      - name: Verify Clang
+        run: |
+          echo "CC=$CC"
+          echo "CXX=$CXX"
+          clang++ --version
+
+      # -----------------------------------------------------------------------
+      # 7. Build — feed interactive prompts via stdin redirect
+      # -----------------------------------------------------------------------
+      # The script asks two questions:
+      #   1) Build type  → release
+      #   2) Use vcpkg?  → yes
+      # -----------------------------------------------------------------------
+      - name: Build (build.sh — release, vcpkg)
+        run: |
+          printf 'release\nyes\n' > /tmp/build_input.txt
+          chmod +x build.sh
+          bash build.sh < /tmp/build_input.txt
+
+      # -----------------------------------------------------------------------
+      # 8. Verify binary was produced
+      # -----------------------------------------------------------------------
+      - name: Verify build output
+        run: |
+          if [ -f build/hellspawn ]; then
+            echo "::notice::Build succeeded — binary at build/hellspawn"
+            file build/hellspawn
+          else
+            echo "::error::Expected binary build/hellspawn not found"
+            exit 1
+          fi
+
+  # ===========================================================================
+  # Windows — MSVC / MSBuild via build.bat
+  # ===========================================================================
+  build-windows:
+    name: Windows Build
+    runs-on: windows-latest
+
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-binary-cache
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Prepare vcpkg binary cache directory
+      # -----------------------------------------------------------------------
+      - name: Create vcpkg binary cache directory
+        shell: bash
+        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      # -----------------------------------------------------------------------
+      # 3. Restore vcpkg binary cache
+      # -----------------------------------------------------------------------
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}\vcpkg-binary-cache
+          key: vcpkg-windows-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-windows-
+
+      # -----------------------------------------------------------------------
+      # 4. Restore CMake build directory (incremental builds)
+      # -----------------------------------------------------------------------
+      - name: Restore CMake build cache
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: cmake-windows-${{ hashFiles('CMakeLists.txt', 'src/**') }}
+          restore-keys: |
+            cmake-windows-
+
+      # -----------------------------------------------------------------------
+      # 5. Add MSBuild to PATH (used by CMake's Visual Studio generator)
+      # -----------------------------------------------------------------------
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      # -----------------------------------------------------------------------
+      # 6. Export VCPKG_ROOT so the build script can locate vcpkg
+      # -----------------------------------------------------------------------
+      - name: Set VCPKG_ROOT
+        shell: bash
+        run: echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+
+      # -----------------------------------------------------------------------
+      # 7. Generate Windows icon (.ico) from the PNG shipped in the repo
+      # -----------------------------------------------------------------------
+      # The CMakeLists.txt conditionally embeds hellspawn.rc (which
+      # references hellspawn.ico) into the executable so that Windows
+      # Explorer displays the application icon.  ImageMagick is pre-
+      # installed on GitHub-hosted Windows runners.
+      # -----------------------------------------------------------------------
+      - name: Generate hellspawn.ico from PNG
+        shell: cmd
+        run: magick hellspawn.png -define icon:auto-resize=256,128,64,48,32,16 hellspawn.ico
+
+      # -----------------------------------------------------------------------
+      # 8. Build — feed interactive prompts via stdin redirect
+      # -----------------------------------------------------------------------
+      # Writes the two answers to a temporary file and redirects it into
+      # build.bat so that `set /p` reads them from stdin.
+      # -----------------------------------------------------------------------
+      - name: Build (build.bat — release, vcpkg)
+        shell: cmd
+        run: |
+          (echo release& echo yes) > build_input.txt
+          call build.bat < build_input.txt
+
+      # -----------------------------------------------------------------------
+      # 9. Verify binary was produced
+      # -----------------------------------------------------------------------
+      - name: Verify build output
+        shell: cmd
+        run: |
+          if exist "build\Release\hellspawn.exe" (
+            echo ::notice::Build succeeded — binary at build\Release\hellspawn.exe
+          ) else if exist "build\hellspawn.exe" (
+            echo ::notice::Build succeeded — binary at build\hellspawn.exe
+          ) else (
+            echo ::error::Expected binary not found in build directory
+            exit /b 1
+          )
