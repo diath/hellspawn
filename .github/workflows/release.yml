@@ -1,8 +1,11 @@
 # =============================================================================
 # Release Build & Distribution
 # =============================================================================
-# Produces distributable artifacts for Windows (zip with exe + DLLs) and Linux
-# (AppImage) then publishes them as a GitHub Release.
+# Produces distributable artifacts for Windows (zip with exe + DLLs) then
+# publishes them as a GitHub Release.
+#
+# NOTE: The Linux build is temporarily disabled due to CI breakage.
+#       The build-linux job is commented out below — re-enable it when fixed.
 #
 # Trigger: push to the `release` branch.
 # Version: derived from the GitHub Actions run number.
@@ -13,8 +16,7 @@
 #
 # Structure:
 #   1. build-windows  — compile, run windeployqt, zip
-#   2. build-linux    — compile, create AppImage via linuxdeploy
-#   3. publish-release — download both artifacts, create GitHub Release
+#   2. publish-release — download artifact, create GitHub Release
 # =============================================================================
 
 name: Release Build & Distribution
@@ -201,218 +203,166 @@ jobs:
           retention-days: 3
 
   # ===========================================================================
-  # Linux — Clang via build.sh → AppImage
+  # Linux — TEMPORARILY DISABLED
   # ===========================================================================
-  build-linux:
-    name: Linux Build (Clang)
-    runs-on: ubuntu-latest
-
-    env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
-      # Force Clang for the build script and for vcpkg port compilation.
-      CC: clang
-      CXX: clang++
-
-    steps:
-      # -----------------------------------------------------------------------
-      # 1. Checkout
-      # -----------------------------------------------------------------------
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # -----------------------------------------------------------------------
-      # 2. Prepare vcpkg binary cache directory
-      # -----------------------------------------------------------------------
-      - name: Create vcpkg binary cache directory
-        run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
-
-      # -----------------------------------------------------------------------
-      # 3. Restore vcpkg binary cache
-      # -----------------------------------------------------------------------
-      - name: Restore vcpkg binary cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/vcpkg-binary-cache
-          key: vcpkg-linux-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-linux-
-
-      # -----------------------------------------------------------------------
-      # 4. Install system dependencies
-      # -----------------------------------------------------------------------
-      # Packages required by vcpkg to build Qt6 from source, plus libfuse2
-      # which is needed to run / create AppImages on Ubuntu 22.04+.
-      # -----------------------------------------------------------------------
-      - name: Install Clang and system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            clang build-essential pkg-config python3 perl \
-            libgl1-mesa-dev libglu1-mesa-dev libegl1-mesa-dev \
-            libx11-dev libx11-xcb-dev libxcb1-dev \
-            libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
-            libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render0-dev \
-            libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
-            libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev \
-            libxcb-xinerama0-dev libxcb-xkb-dev libxcb-cursor-dev \
-            libxext-dev libxfixes-dev libxi-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libxrender-dev \
-            libatspi2.0-dev libdbus-1-dev \
-            libfontconfig1-dev libfreetype6-dev \
-            imagemagick libfuse2 autoconf autoconf-archive libltdl-dev
-
-      # -----------------------------------------------------------------------
-      # 5. Export VCPKG_ROOT so the build script can locate vcpkg
-      # -----------------------------------------------------------------------
-      - name: Set VCPKG_ROOT
-        run: echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
-
-      # -----------------------------------------------------------------------
-      # 5b. Verify Clang is available
-      # -----------------------------------------------------------------------
-      - name: Verify Clang
-        run: |
-          echo "CC=$CC"
-          echo "CXX=$CXX"
-          clang++ --version
-
-      # -----------------------------------------------------------------------
-      # 6. Build — feed interactive prompts via stdin redirect
-      # -----------------------------------------------------------------------
-      - name: Build (build.sh — release, vcpkg)
-        run: |
-          printf 'release\nyes\n' > /tmp/build_input.txt
-          chmod +x build.sh
-          bash build.sh < /tmp/build_input.txt
-
-      # -----------------------------------------------------------------------
-      # 7. Verify binary
-      # -----------------------------------------------------------------------
-      - name: Verify build output
-        run: |
-          if [ ! -f build/hellspawn ]; then
-            echo "::error::Expected binary build/hellspawn not found"
-            exit 1
-          fi
-          file build/hellspawn
-
-      # -----------------------------------------------------------------------
-      # 8. Create .desktop file and icon for the AppImage
-      # -----------------------------------------------------------------------
-      - name: Create desktop entry and prepare icon
-        run: |
-          cat > hellspawn.desktop << 'DESKTOP'
-          [Desktop Entry]
-          Name=Hellspawn
-          Exec=hellspawn
-          Icon=hellspawn
-          Type=Application
-          Categories=Development;
-          Comment=Data editor for forgottenserver and otclient
-          DESKTOP
-
-          # Use the actual application icon shipped in the repository.
-          # The file is already at the repo root as hellspawn.png — just
-          # verify it exists so linuxdeploy can pick it up.
-          if [ ! -f hellspawn.png ]; then
-            echo "::error::hellspawn.png not found in repository root"
-            exit 1
-          fi
-          echo "[OK] Using hellspawn.png from repository for AppImage icon"
-
-      # -----------------------------------------------------------------------
-      # 9. Download linuxdeploy + Qt plugin
-      # -----------------------------------------------------------------------
-      - name: Download linuxdeploy
-        run: |
-          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
-            -O linuxdeploy-x86_64.AppImage
-          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage" \
-            -O linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy-*.AppImage
-
-      # -----------------------------------------------------------------------
-      # 10. Build the AppImage
-      # -----------------------------------------------------------------------
-      # linuxdeploy-plugin-qt relies on `qmake -query` to discover Qt paths.
-      # We point QMAKE at the vcpkg-installed qmake6 so the plugin can find
-      # the Qt libraries and plugins directory automatically.
-      #
-      # APPIMAGE_EXTRACT_AND_RUN=1 avoids needing a real FUSE mount inside
-      # the runner (containers / namespaces don't support FUSE).
-      # -----------------------------------------------------------------------
-      - name: Create AppImage
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: |
-          TRIPLET_DIR="$(find build/vcpkg_installed -maxdepth 1 -mindepth 1 -type d | head -1)"
-          echo "[INFO] vcpkg triplet directory: $TRIPLET_DIR"
-
-          # Locate qmake6 (Qt6) or qmake (Qt5) installed by vcpkg.
-          QMAKE_BIN="$(find "$TRIPLET_DIR" -name 'qmake6' -type f 2>/dev/null | head -1)"
-          if [ -z "$QMAKE_BIN" ]; then
-            QMAKE_BIN="$(find "$TRIPLET_DIR" -name 'qmake' -type f 2>/dev/null | head -1)"
-          fi
-
-          if [ -n "$QMAKE_BIN" ]; then
-            echo "[INFO] Using QMAKE: $QMAKE_BIN"
-            export QMAKE="$QMAKE_BIN"
-            export PATH="$(dirname "$QMAKE_BIN"):$PATH"
-          else
-            echo "::warning::qmake not found — Qt plugin may not bundle all libraries"
-          fi
-
-          # Help the dynamic linker and Qt plugin discovery.
-          export LD_LIBRARY_PATH="$TRIPLET_DIR/lib:${LD_LIBRARY_PATH:-}"
-
-          QT_PLUGIN_DIR="$(find "$TRIPLET_DIR" -type d -name 'plugins' -path '*/Qt6/*' 2>/dev/null | head -1)"
-          if [ -z "$QT_PLUGIN_DIR" ]; then
-            QT_PLUGIN_DIR="$(find "$TRIPLET_DIR" -type d -name 'plugins' 2>/dev/null | head -1)"
-          fi
-          if [ -n "$QT_PLUGIN_DIR" ]; then
-            export QT_PLUGIN_PATH="$QT_PLUGIN_DIR"
-            echo "[INFO] QT_PLUGIN_PATH=$QT_PLUGIN_DIR"
-          fi
-
-          # Determine output name.
-          OUTPUT_NAME="Hellspawn-${{ env.RELEASE_VERSION }}-x86_64.AppImage"
-          export OUTPUT="$OUTPUT_NAME"
-
-          # Run linuxdeploy with the Qt plugin.
-          ./linuxdeploy-x86_64.AppImage \
-            --appdir AppDir \
-            --executable build/hellspawn \
-            --desktop-file hellspawn.desktop \
-            --icon-file hellspawn.png \
-            --plugin qt \
-            --output appimage
-
-          if [ ! -f "$OUTPUT_NAME" ]; then
-            echo "::error::AppImage was not created"
-            ls -la *.AppImage 2>/dev/null || true
-            exit 1
-          fi
-
-          echo "[OK] Created $OUTPUT_NAME"
-          echo "APPIMAGE_PATH=$OUTPUT_NAME" >> "$GITHUB_ENV"
-
-      # -----------------------------------------------------------------------
-      # 11. Upload AppImage as a workflow artifact
-      # -----------------------------------------------------------------------
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-release
-          path: ${{ env.APPIMAGE_PATH }}
-          if-no-files-found: error
-          retention-days: 3
+  # The Linux build is commented out due to CI breakage. Re-enable when fixed.
+  # ===========================================================================
+  # build-linux:
+  #   name: Linux Build (Clang)
+  #   runs-on: ubuntu-latest
+  #
+  #   env:
+  #     VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
+  #     CC: clang
+  #     CXX: clang++
+  #
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Create vcpkg binary cache directory
+  #       run: mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+  #
+  #     - name: Restore vcpkg binary cache
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: ${{ github.workspace }}/vcpkg-binary-cache
+  #         key: vcpkg-linux-${{ hashFiles('vcpkg.json') }}
+  #         restore-keys: |
+  #           vcpkg-linux-
+  #
+  #     - name: Install Clang and system dependencies
+  #       run: |
+  #         sudo apt-get update -qq
+  #         sudo apt-get install -y --no-install-recommends \
+  #           clang build-essential pkg-config python3 perl \
+  #           libgl1-mesa-dev libglu1-mesa-dev libegl1-mesa-dev \
+  #           libx11-dev libx11-xcb-dev libxcb1-dev \
+  #           libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
+  #           libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render0-dev \
+  #           libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
+  #           libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev \
+  #           libxcb-xinerama0-dev libxcb-xkb-dev libxcb-cursor-dev \
+  #           libxext-dev libxfixes-dev libxi-dev \
+  #           libxkbcommon-dev libxkbcommon-x11-dev libxrender-dev \
+  #           libatspi2.0-dev libdbus-1-dev \
+  #           libfontconfig1-dev libfreetype6-dev \
+  #           imagemagick libfuse2 autoconf autoconf-archive libltdl-dev
+  #
+  #     - name: Set VCPKG_ROOT
+  #       run: echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+  #
+  #     - name: Verify Clang
+  #       run: |
+  #         echo "CC=$CC"
+  #         echo "CXX=$CXX"
+  #         clang++ --version
+  #
+  #     - name: Build (build.sh — release, vcpkg)
+  #       run: |
+  #         printf 'release\nyes\n' > /tmp/build_input.txt
+  #         chmod +x build.sh
+  #         bash build.sh < /tmp/build_input.txt
+  #
+  #     - name: Verify build output
+  #       run: |
+  #         if [ ! -f build/hellspawn ]; then
+  #           echo "::error::Expected binary build/hellspawn not found"
+  #           exit 1
+  #         fi
+  #         file build/hellspawn
+  #
+  #     - name: Create desktop entry and prepare icon
+  #       run: |
+  #         cat > hellspawn.desktop << 'DESKTOP'
+  #         [Desktop Entry]
+  #         Name=Hellspawn
+  #         Exec=hellspawn
+  #         Icon=hellspawn
+  #         Type=Application
+  #         Categories=Development;
+  #         Comment=Data editor for forgottenserver and otclient
+  #         DESKTOP
+  #
+  #         if [ ! -f hellspawn.png ]; then
+  #           echo "::error::hellspawn.png not found in repository root"
+  #           exit 1
+  #         fi
+  #         echo "[OK] Using hellspawn.png from repository for AppImage icon"
+  #
+  #     - name: Download linuxdeploy
+  #       run: |
+  #         wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
+  #           -O linuxdeploy-x86_64.AppImage
+  #         wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage" \
+  #           -O linuxdeploy-plugin-qt-x86_64.AppImage
+  #         chmod +x linuxdeploy-*.AppImage
+  #
+  #     - name: Create AppImage
+  #       env:
+  #         APPIMAGE_EXTRACT_AND_RUN: "1"
+  #       run: |
+  #         TRIPLET_DIR="$(find build/vcpkg_installed -maxdepth 1 -mindepth 1 -type d | head -1)"
+  #         echo "[INFO] vcpkg triplet directory: $TRIPLET_DIR"
+  #
+  #         QMAKE_BIN="$(find "$TRIPLET_DIR" -name 'qmake6' -type f 2>/dev/null | head -1)"
+  #         if [ -z "$QMAKE_BIN" ]; then
+  #           QMAKE_BIN="$(find "$TRIPLET_DIR" -name 'qmake' -type f 2>/dev/null | head -1)"
+  #         fi
+  #
+  #         if [ -n "$QMAKE_BIN" ]; then
+  #           echo "[INFO] Using QMAKE: $QMAKE_BIN"
+  #           export QMAKE="$QMAKE_BIN"
+  #           export PATH="$(dirname "$QMAKE_BIN"):$PATH"
+  #         else
+  #           echo "::warning::qmake not found — Qt plugin may not bundle all libraries"
+  #         fi
+  #
+  #         export LD_LIBRARY_PATH="$TRIPLET_DIR/lib:${LD_LIBRARY_PATH:-}"
+  #
+  #         QT_PLUGIN_DIR="$(find "$TRIPLET_DIR" -type d -name 'plugins' -path '*/Qt6/*' 2>/dev/null | head -1)"
+  #         if [ -z "$QT_PLUGIN_DIR" ]; then
+  #           QT_PLUGIN_DIR="$(find "$TRIPLET_DIR" -type d -name 'plugins' 2>/dev/null | head -1)"
+  #         fi
+  #         if [ -n "$QT_PLUGIN_DIR" ]; then
+  #           export QT_PLUGIN_PATH="$QT_PLUGIN_DIR"
+  #           echo "[INFO] QT_PLUGIN_PATH=$QT_PLUGIN_DIR"
+  #         fi
+  #
+  #         OUTPUT_NAME="Hellspawn-${{ env.RELEASE_VERSION }}-x86_64.AppImage"
+  #         export OUTPUT="$OUTPUT_NAME"
+  #
+  #         ./linuxdeploy-x86_64.AppImage \
+  #           --appdir AppDir \
+  #           --executable build/hellspawn \
+  #           --desktop-file hellspawn.desktop \
+  #           --icon-file hellspawn.png \
+  #           --plugin qt \
+  #           --output appimage
+  #
+  #         if [ ! -f "$OUTPUT_NAME" ]; then
+  #           echo "::error::AppImage was not created"
+  #           ls -la *.AppImage 2>/dev/null || true
+  #           exit 1
+  #         fi
+  #
+  #         echo "[OK] Created $OUTPUT_NAME"
+  #         echo "APPIMAGE_PATH=$OUTPUT_NAME" >> "$GITHUB_ENV"
+  #
+  #     - name: Upload Linux artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: linux-release
+  #         path: ${{ env.APPIMAGE_PATH }}
+  #         if-no-files-found: error
+  #         retention-days: 3
 
   # ===========================================================================
-  # Publish — create a GitHub Release with both platform artifacts
+  # Publish — create a GitHub Release with the Windows artifact
   # ===========================================================================
   publish-release:
     name: Publish GitHub Release
-    needs: [build-windows, build-linux]
+    needs: [build-windows]
     runs-on: ubuntu-latest
 
     permissions:
@@ -420,7 +370,7 @@ jobs:
 
     steps:
       # -----------------------------------------------------------------------
-      # 1. Download all artifacts produced by the build jobs
+      # 1. Download artifacts produced by the build jobs
       # -----------------------------------------------------------------------
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
@@ -428,11 +378,12 @@ jobs:
           name: windows-release
           path: artifacts/windows
 
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-release
-          path: artifacts/linux
+      # NOTE: Linux artifact download disabled while Linux build is broken.
+      # - name: Download Linux artifact
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: linux-release
+      #     path: artifacts/linux
 
       # -----------------------------------------------------------------------
       # 2. List collected artifacts for the log
@@ -468,13 +419,13 @@ jobs:
             | Platform | Artifact |
             |----------|----------|
             | Windows x64 | `hellspawn-${{ env.RELEASE_VERSION }}-windows-x64.zip` |
-            | Linux x86_64 | `Hellspawn-${{ env.RELEASE_VERSION }}-x86_64.AppImage` |
 
             > **Windows:** Extract the zip and run `hellspawn.exe`. All required DLLs are included.
-            > **Linux:** `chmod +x *.AppImage && ./Hellspawn-*.AppImage`
+
+            ---
+            _Note: Linux builds are temporarily unavailable._
           draft: false
           prerelease: false
           files: |
             artifacts/windows/*
-            artifacts/linux/*
           fail_on_unmatched_files: true
