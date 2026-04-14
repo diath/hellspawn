@@ -25,7 +25,7 @@ Made with the assistance of `Claude Opus 4.6`.
 	* `chmod +x build.sh`
 	* `./build.sh`
 
-# Pre-built binaries:
+# Pre-built Binaries
 Pre-built binaries are available through [GitHub Releases](https://github.com/diath/hellspawn/releases).
 
 # TODO
