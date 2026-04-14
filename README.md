@@ -13,21 +13,20 @@ Made with the assistance of `Claude Opus 4.6`.
 # Build Instructions (Windows)
 * Requirements: Git, CMake, MSBuild/VS (with C++20 support), vcpkg.
 * Steps
-	* `git clone hellspawn`
+	* `git clone git@github.com:diath/hellspawn.git`
 	* `cd hellspawn`
 	* `build.bat`
 
 # Build Instructions (Linux)
 * Requirements: Git, CMake, GCC or Clang (with C++20 support), vcpkg (or required system libraries: Qt6, fmtlib, pugixml).
 * Steps:
-	* `git clone hellspawn`
+	* `git clone git@github.com:diath/hellspawn.git`
 	* `cd hellspawn`
 	* `chmod +x build.sh`
 	* `./build.sh`
 
 # Pre-built binaries:
-* Windows (WIP)
-* Linux (WIP)
+Pre-built binaries are available through [GitHub Releases](https://github.com/diath/hellspawn/releases).
 
 # TODO
 Non-exhaustive list of nice-to-have features that are currently missing in the editor and other things:
