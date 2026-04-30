@@ -600,7 +600,7 @@ void OtbFile::syncItemFlagsWithThingType(uint16_t clientId, const ThingType *thi
 	        OtbFlagReadable: preserve existing value, as we do not have support for editing this flag in the UI, and it is not derived from ThingType attributes
 
 	    The following OtbFlags require special handling because they don't have a 1:1 mapping with ThingType attributes:
-	        OtbFlagHasHeight: set if ThingType elevation > 0
+	        OtbFlagHasHeight: set if ThingType elevation > 0 or has ThingAttrElevation, since elevation can be 0 but still considered a "height" if it has the attribute
 	        OtbFlagMoveable: set if ThingType does NOT have ThingAttrNotMoveable
 	        OtbFlagAnimation: set if ThingType has any animation frame groups
 	*/
