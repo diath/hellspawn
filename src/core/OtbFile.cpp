@@ -623,8 +623,7 @@ void OtbFile::syncItemFlagsWithThingType(uint16_t clientId, const ThingType *thi
 	};
 
 	// Reset all flags before reapplying based on ThingType attributes, to ensure a clean sync.
-	// This also means that any flags that don't have a corresponding ThingType attribute will be cleared and not preserved,
-	// which is intentional since those flags are either server-side only or require special handling.
+	// Preserve flags that are currently not editable and cannot be derived from ThingType attributes, to avoid accidentally clearing them during sync.
 	const bool isAlwaysOnTop = item->hasFlag(OtbFlagAlwaysOnTop);
 	const bool isReadable = item->hasFlag(OtbFlagReadable);
 	const bool allowDistRead = item->hasFlag(OtbFlagAllowDistRead);
