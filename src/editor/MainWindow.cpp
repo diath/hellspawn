@@ -103,6 +103,11 @@ void MainWindow::setupMenuBar()
 	connect(m_removeUnusedSpritesAction, &QAction::triggered, this, &MainWindow::removeUnusedSprites);
 	m_actionsMenu->addAction(m_removeUnusedSpritesAction);
 
+	m_testOtbFlagSyncAction = new QAction("Test OTB Flag Sync", this);
+	m_testOtbFlagSyncAction->setStatusTip("Test if OTB flags are in sync with Thing attributes");
+	connect(m_testOtbFlagSyncAction, &QAction::triggered, this, &MainWindow::testOtbFlagSync);
+	m_actionsMenu->addAction(m_testOtbFlagSyncAction);
+
 	m_actionsMenu->addSeparator();
 
 	m_clearClipboardThingAction = new QAction("Clear Clipboard Thing", this);
@@ -120,6 +125,7 @@ void MainWindow::setupMenuBar()
 		bool loaded = tab && tab->isLoaded();
 		m_clearMarketDataAction->setEnabled(loaded);
 		m_removeUnusedSpritesAction->setEnabled(loaded);
+		m_testOtbFlagSyncAction->setEnabled(loaded);
 		m_clearClipboardThingAction->setEnabled(ThingEditor::hasClipboardThing());
 	});
 
@@ -467,4 +473,57 @@ void MainWindow::removeUnusedSprites()
 	QMessageBox::information(this, "Remove Unused Sprites", QString("Removed %1 unused sprite(s).").arg(removedCount));
 
 	Log().info("MainWindow: removed {} unused sprites", removedCount);
+}
+
+void MainWindow::testOtbFlagSync()
+{
+	EditorTab *tab = currentEditorTab();
+	if (!tab || !tab->isLoaded() || !tab->datFile().isLoaded() || !tab->otbFile().isLoaded()) {
+		QMessageBox::warning(this, "Test OTB Flag Sync", "No data is currently loaded. Please load files first.");
+		return;
+	}
+
+	const DatFile &dat = tab->datFile();
+	OtbFile &otb = tab->otbFile();
+
+	uint32_t failed = 0;
+	for (const auto &thingType: dat.getThingTypes(ThingCategory::Item)) {
+		if (!thingType) {
+			continue;
+		}
+
+		auto otbItem = otb.getItemByClientIdMut(thingType->id);
+		if (!otbItem) {
+			Log().warning("MainWindow: OTB item missing for Thing ID {}", thingType->id);
+			continue;
+		}
+
+		const uint32_t oldFlags = otbItem->flags;
+		otb.syncItemFlagsWithThingType(thingType->id, thingType.get());
+		const uint32_t newFlags = otbItem->flags;
+
+		uint32_t difference = oldFlags ^ newFlags;
+		if (difference != 0) {
+			++failed;
+			Log().info("MainWindow: synced OTB flags for Thing ID {} (OTB flags changed from 0x{:08X} to 0x{:08X})", thingType->id, oldFlags, newFlags);
+
+			for (uint8_t bit = 0; bit < OTB_FLAG_COUNT; ++bit) {
+				uint32_t mask = (1u << bit);
+				if ((difference & mask) != 0) {
+					bool oldSet = (oldFlags & mask) != 0;
+					bool newSet = (newFlags & mask) != 0;
+					Log().info("\tFlag {:s} ({:d}): {} -> {}", otbFlagName(mask), bit, oldSet ? "set" : "unset", newSet ? "set" : "unset");
+				}
+			}
+		}
+
+		// Restore original flags to avoid modifying the item in case of detected discrepancies.
+		otbItem->flags = oldFlags;
+	}
+
+	if (failed > 0) {
+		QMessageBox::information(this, "Test OTB Flag Sync", QString("OTB flag sync test completed with discrepancies (%1 items).\nCheck console output for details.").arg(failed));
+	} else {
+		QMessageBox::information(this, "Test OTB Flag Sync", "OTB flag sync test passed.");
+	}
 }

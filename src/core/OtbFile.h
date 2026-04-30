@@ -51,6 +51,7 @@ class OtbFile
 		const OtbItemType *getItemByServerId(uint16_t serverId) const;
 		OtbItemType *getItemByServerIdMut(uint16_t serverId);
 		const OtbItemType *getItemByClientId(uint16_t clientId) const;
+		OtbItemType *getItemByClientIdMut(uint16_t clientId);
 
 		void addItem(const OtbItemType &item);
 		bool removeItemByServerId(uint16_t serverId);
@@ -61,6 +62,8 @@ class OtbFile
 		/// Call this after mutating items through itemsMut() or items() in ways
 		/// that change serverId/clientId values.
 		void invalidateLookupTables() { m_lookupDirty = true; }
+
+		void syncItemFlagsWithThingType(uint16_t clientId, const ThingType *thingType);
 
 	private:
 		struct OtbNode

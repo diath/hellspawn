@@ -495,6 +495,16 @@ const OtbItemType *OtbFile::getItemByClientId(uint16_t clientId) const
 	return nullptr;
 }
 
+OtbItemType *OtbFile::getItemByClientIdMut(uint16_t clientId)
+{
+	ensureLookupTables();
+	auto it = m_clientIdIndex.find(clientId);
+	if (it != m_clientIdIndex.end()) {
+		return &m_items[it->second];
+	}
+	return nullptr;
+}
+
 void OtbFile::addItem(const OtbItemType &item)
 {
 	// If lookup tables are clean, incrementally update them (O(1)).
@@ -542,6 +552,146 @@ void OtbFile::createEmpty(uint32_t majorVersion, uint32_t minorVersion, uint32_t
 	m_versionInfo.description = "Hellspawn Editor";
 	m_loaded = true;
 	// unload() already cleared the maps and set m_lookupDirty = false
+}
+
+void OtbFile::syncItemFlagsWithThingType(uint16_t clientId, const ThingType *thingType)
+{
+	OtbItemType *item = getItemByClientIdMut(clientId);
+	if (!item) {
+		return;
+	}
+
+	// TODO: Group handling, currently not customizable, preserve existing value for now.
+	item->group = item->group;
+
+	struct FlagDef
+	{
+			ThingAttr attr;
+			OtbItemFlags flag;
+	};
+
+	/*
+	    The following OtbFlags are not set in the OtbItemType object but are rather set dynamically by the server:
+	        OtbFlagFloorChangeDown
+	        OtbFlagFloorChangeNorth
+	        OtbFlagFloorChangeEast
+	        OtbFlagFloorChangeSouth
+	        OtbFlagFloorChangeWest
+	        OtbFlagCannotDecay
+	        OtbFlagUnused
+
+	    The following OtbFlags are generic boolean flags that can be toggled in the editor and derived from ThingType attributes:
+	        OtbFlagBlockSolid
+	        OtbFlagBlockProjectile
+	        OtbFlagBlockPathFind
+	        OtbFlagUseable
+	        OtbFlagPickupable
+	        OtbFlagStackable
+	        OtbFlagRotatable
+	        OtbFlagHangable
+	        OtbFlagVertical
+	        OtbFlagHorizontal
+	        OtbFlagLookThrough
+	        OtbFlagFullTile
+	        OtbFlagForceUse
+
+	    The following OtbFlags are currently not editable and preserve their existing value, since they require special handling or don't have a direct mapping to ThingType attributes:
+	        OtbFlagAlwaysOnTop: preserve existing value, as we do not have support for editing this flag in the UI, and it is not derived from ThingType attributes
+	        OtbFlagReadable: preserve existing value, as we do not have support for editing this flag in the UI, and it is not derived from ThingType attributes
+
+	    The following OtbFlags require special handling because they don't have a 1:1 mapping with ThingType attributes:
+	        OtbFlagHasHeight: set if ThingType elevation > 0
+	        OtbFlagMoveable: set if ThingType does NOT have ThingAttrNotMoveable
+	        OtbFlagAnimation: set if ThingType has any animation frame groups
+	*/
+
+	// Generic boolean flags.
+	static const FlagDef flags[] = {
+	    {.attr = ThingAttrNotWalkable, .flag = OtbFlagBlockSolid},
+	    {.attr = ThingAttrBlockProjectile, .flag = OtbFlagBlockProjectile},
+	    {.attr = ThingAttrNotPathable, .flag = OtbFlagBlockPathFind},
+	    {.attr = ThingAttrMultiUse, .flag = OtbFlagUseable},
+	    {.attr = ThingAttrPickupable, .flag = OtbFlagPickupable},
+	    {.attr = ThingAttrStackable, .flag = OtbFlagStackable},
+	    {.attr = ThingAttrRotateable, .flag = OtbFlagRotatable},
+	    {.attr = ThingAttrHangable, .flag = OtbFlagHangable},
+	    {.attr = ThingAttrHookEast, .flag = OtbFlagVertical},
+	    {.attr = ThingAttrHookSouth, .flag = OtbFlagHorizontal},
+	    {.attr = ThingAttrLook, .flag = OtbFlagLookThrough},
+	    {.attr = ThingAttrFullGround, .flag = OtbFlagFullTile},
+	    {.attr = ThingAttrForceUse, .flag = OtbFlagForceUse},
+	};
+
+	// Reset all flags before reapplying based on ThingType attributes, to ensure a clean sync.
+	// This also means that any flags that don't have a corresponding ThingType attribute will be cleared and not preserved,
+	// which is intentional since those flags are either server-side only or require special handling.
+	const bool isAlwaysOnTop = item->hasFlag(OtbFlagAlwaysOnTop);
+	const bool isReadable = item->hasFlag(OtbFlagReadable);
+	const bool allowDistRead = item->hasFlag(OtbFlagAllowDistRead);
+
+	item->flags = 0;
+
+	// Restore flags that are currently not editable and cannot be derived from ThingType attributes, to preserve existing values for those flags.
+	if (isAlwaysOnTop) {
+		item->setFlag(OtbFlagAlwaysOnTop);
+	}
+
+	if (isReadable) {
+		item->setFlag(OtbFlagReadable);
+	}
+
+	if (allowDistRead) {
+		item->setFlag(OtbFlagAllowDistRead);
+	}
+
+	for (const auto &def: flags) {
+		if (thingType->hasAttr(def.attr)) {
+			item->setFlag(def.flag);
+		}
+	}
+
+	// Boolean flags that require special handling because they don't have a 1:1 mapping with ThingType attrs.
+	// Elevation may have a value of 0 but still be considered a "height" if it has the ThingAttrElevation attribute, so check both.
+	if (thingType->elevation > 0 || thingType->hasAttr(ThingAttrElevation)) {
+		item->setFlag(OtbFlagHasHeight);
+	}
+
+	if (!thingType->hasAttr(ThingAttrNotMoveable)) {
+		item->setFlag(OtbFlagMoveable);
+	}
+
+	for (const auto &frameGroup: thingType->frameGroups) {
+		if (frameGroup && frameGroup->isAnimation) {
+			item->setFlag(OtbFlagAnimation);
+			break;
+		}
+	}
+
+	// Other properties.
+	if (thingType->hasAttr(ThingAttrGround)) {
+		item->speed = thingType->getU16Attr(ThingAttrGround);
+	} else {
+		item->speed = 0;
+	}
+
+	if (thingType->hasAttr(ThingAttrMarket)) {
+		MarketData market = thingType->getMarketAttr();
+		item->wareId = market.tradeAs;
+	} else {
+		item->wareId = 0;
+	}
+
+	if (thingType->hasAttr(ThingAttrLight)) {
+		LightData light = thingType->getLightAttr();
+		item->lightLevel = light.intensity > 0 ? static_cast<uint8_t>(light.intensity) : 0;
+		item->lightColor = light.color > 0 ? static_cast<uint8_t>(light.color) : 0;
+	} else {
+		item->lightLevel = 0;
+		item->lightColor = 0;
+	}
+
+	// TODO: Always on top order handling, currently not customizable, preserve existing value for now.
+	item->alwaysOnTopOrder = item->alwaysOnTopOrder;
 }
 
 void OtbFile::rebuildLookupTables() const

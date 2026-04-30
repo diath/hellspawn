@@ -505,6 +505,40 @@ struct OtbItemType
 		uint8_t lightColor = 0;
 		uint8_t alwaysOnTopOrder = 0;
 		std::string name;
+
+		bool operator==(const OtbItemType &other) const
+		{
+			return serverId == other.serverId
+			    && clientId == other.clientId
+			    && group == other.group
+			    && flags == other.flags
+			    && speed == other.speed
+			    && wareId == other.wareId
+			    && lightLevel == other.lightLevel
+			    && lightColor == other.lightColor
+			    && alwaysOnTopOrder == other.alwaysOnTopOrder
+			    && name == other.name;
+		}
+
+		bool operator!=(const OtbItemType &other) const
+		{
+			return !(*this == other);
+		}
+
+		bool hasFlag(uint32_t flag) const
+		{
+			return (flags & flag) != 0;
+		}
+
+		void setFlag(uint32_t flag)
+		{
+			flags |= flag;
+		}
+
+		void clearFlag(uint32_t flag)
+		{
+			flags &= ~flag;
+		}
 };
 
 struct OtbVersionInfo
@@ -565,6 +599,70 @@ enum OtbItemFlags : uint32_t
 	OtbFlagFullTile = 1 << 25,
 	OtbFlagForceUse = 1 << 26,
 };
+
+inline const char *otbFlagName(uint32_t flag)
+{
+	switch (flag) {
+		case OtbFlagBlockSolid:
+			return "Block Solid";
+		case OtbFlagBlockProjectile:
+			return "Block Projectile";
+		case OtbFlagBlockPathFind:
+			return "Block Path Find";
+		case OtbFlagHasHeight:
+			return "Has Height";
+		case OtbFlagUseable:
+			return "Useable";
+		case OtbFlagPickupable:
+			return "Pickupable";
+		case OtbFlagMoveable:
+			return "Moveable";
+		case OtbFlagStackable:
+			return "Stackable";
+		case OtbFlagFloorChangeDown:
+			return "Floor Change Down";
+		case OtbFlagFloorChangeNorth:
+			return "Floor Change North";
+		case OtbFlagFloorChangeEast:
+			return "Floor Change East";
+		case OtbFlagFloorChangeSouth:
+			return "Floor Change South";
+		case OtbFlagFloorChangeWest:
+			return "Floor Change West";
+		case OtbFlagAlwaysOnTop:
+			return "Always On Top";
+		case OtbFlagReadable:
+			return "Readable";
+		case OtbFlagRotatable:
+			return "Rotatable";
+		case OtbFlagHangable:
+			return "Hangable";
+		case OtbFlagVertical:
+			return "Vertical";
+		case OtbFlagHorizontal:
+			return "Horizontal";
+		case OtbFlagCannotDecay:
+			return "Cannot Decay";
+		case OtbFlagAllowDistRead:
+			return "Allow Dist Read";
+		case OtbFlagUnused:
+			return "Unused";
+		case OtbFlagClientCharges:
+			return "Client Charges";
+		case OtbFlagLookThrough:
+			return "Look Through";
+		case OtbFlagAnimation:
+			return "Animation";
+		case OtbFlagFullTile:
+			return "Full Tile";
+		case OtbFlagForceUse:
+			return "Force Use";
+		default:
+			return "Unknown Flag";
+	}
+}
+
+constexpr int OTB_FLAG_COUNT = 27;
 
 enum OtbItemAttr : uint8_t
 {

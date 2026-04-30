@@ -979,6 +979,11 @@ void ThingEditor::onThingPropertyModified()
 		if (catItem)
 			updateListItemDisplay(catItem, static_cast<uint16_t>(thingId), category, thing);
 	}
+
+	// Sync ThingType flag changes for OtbItemType if this is an Item category edit.
+	if (category == ThingCategory::Item && m_otbFile && m_otbFile->isLoaded()) {
+		m_otbFile->syncItemFlagsWithThingType(static_cast<uint16_t>(thingId), thing);
+	}
 }
 
 // ---------------------------------------------------------------------------

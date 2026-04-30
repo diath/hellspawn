@@ -39,8 +39,10 @@ class MainWindow: public QMainWindow
 		void updateTabTitle(int tabIndex);
 		void updateWindowTitle();
 		void showAbout();
+
 		void clearMarketData();
 		void removeUnusedSprites();
+		void testOtbFlagSync();
 
 	protected:
 		void closeEvent(QCloseEvent *event) override;
@@ -69,6 +71,7 @@ class MainWindow: public QMainWindow
 		// Actions menu actions
 		QAction *m_clearMarketDataAction = nullptr;
 		QAction *m_removeUnusedSpritesAction = nullptr;
+		QAction *m_testOtbFlagSyncAction = nullptr;
 		QAction *m_clearClipboardThingAction = nullptr;
 
 		// Help actions
